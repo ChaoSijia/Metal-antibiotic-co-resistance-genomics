@@ -17,4 +17,5 @@ annotation and downstream analysis of soil metatranscriptomic data.
 - R v4.x
 
 ## Notes
-Raw sequencing data are available from NCBI SRA under accession XXXX.
+The whole-genome sequences of the two bacterial strains analyzed in this study have been deposited in the NCBI database under BioSample accession numbers
+SAMN55284608 and SAMN55284609.
