@@ -1,0 +1,293 @@
+#Figure.4 
+
+library(data.table)
+library(dplyr)
+library(readxl)
+library(ggplot2)
+library(effsize)
+
+#Figure.4 A
+
+deepargV2Recs_pub <- NULL
+
+for(f in deeparg.pub){
+  
+  sp <- sub(".deepargV2.mapping.ARG", "", basename(f))
+  
+  dat2 <- fread(f, data.table = FALSE) %>%
+    mutate(Genome = sp)
+  
+  deepargV2Recs_pub <- bind_rows(deepargV2Recs_pub, dat2)
+}
+
+# ===== OTU6 =====
+deepargV2.otu6 <- fread("WK.OTU.6.deepargV2.mapping.ARG", data.table = FALSE) %>%
+  mutate(Genome = "WK.OTU.6")
+
+
+deepargV2.full <- bind_rows(deepargV2.otu6, deepargV2Recs_pub) %>%
+  filter(!is.na(read_id))
+
+
+deepargV2.full$ARGsubtype <- sapply(
+  strsplit(deepargV2.full$`best-hit`, "|", fixed = TRUE),
+  "[[", 3
+)
+
+
+load("E:/Prjct_mine_respiratory_ARG/_data/database/deepargMapping_v1v2_regGenes_corrected.RData")
+
+deepargV2.full$regulator <- ifelse(
+  deepargV2.full$ARGsubtype %in% regGenes.v2_df$ARGsubtype,
+  "regulator", "not"
+)
+
+
+load("E:/Prjct_mine_respiratory_ARG/_data/database/deep_card_unifying.RData")
+
+deepargV2.full <- merge(
+  deepargV2.full,
+  deepv2.highSimilar.cardRec %>% select(deepv2.record, card.record),
+  by.x = "best-hit",
+  by.y = "deepv2.record",
+  all.x = TRUE
+)
+
+
+Habitats <- read_excel("../Diaphorobacter_original.xlsx", col_names = FALSE) %>%
+  select(1,2,6,7,10)
+
+colnames(Habitats) <- c("ID","habitat","species","strain","sequenceType")
+
+deepargV2.full$Genome <- sapply(deepargV2.full$Genome, function(x){
+  parts <- strsplit(x, "_", fixed = TRUE)[[1]]
+  if(length(parts) > 2){
+    paste0(parts[1:2], collapse = "_")
+  } else {
+    parts
+  }
+})
+
+deepargV2.full <- merge(
+  deepargV2.full,
+  Habitats %>% select(ID, habitat),
+  by.x = "Genome",
+  by.y = "ID",
+  all.x = TRUE
+)
+
+
+deepargV2.full %>%
+  group_by(Genome, habitat) %>%
+  summarise(
+    n = n(),
+    n.prob90 = sum(probability > 0.9),
+    n.prob90.eval50 = sum(`alignment-evalue` < 1e-30),
+    n.confirmedARG = sum(regulator != "regulator" & !is.na(card.record)),
+    n.ARG = sum(probability > 0.9 &
+                regulator != "regulator" &
+                !is.na(card.record))
+  )
+
+
+finalARGlist <- deepargV2.full %>%
+  filter(probability > 0.9) %>%
+  filter(regulator != "regulator" & !is.na(card.record))
+
+
+nARG <- finalARGlist %>%
+  group_by(Genome) %>%
+  summarise(n = n())
+
+
+nARG.pub <- nARG$n[nARG$Genome != "WK.OTU.6"]
+nARG.otu6 <- nARG$n[nARG$Genome == "WK.OTU.6"]
+
+shapiro.test(nARG.pub)
+t.test(nARG.pub, mu = nARG.otu6, alternative = "less")
+
+cohen.d(nARG.pub, NA, mu = nARG.otu6)
+
+
+ggplot(nARG %>% filter(Genome != "WK.OTU.6")) +
+  geom_density(aes(x = n), fill = "lightblue") +
+  geom_vline(xintercept = nARG.otu6, color = "red") +
+  theme_bw()
+
+ggsave("图1.Diaphorobacter菌属ARG个数分布图.pdf", width = 5, height = 3)
+
+
+card.aro.info <- fread(
+  "E:/Prjct_mine_respiratory_ARG/_data/database/card-data-202310/aro_index.tsv",
+  data.table = FALSE
+)
+
+finalARGlist <- finalARGlist %>%
+  mutate(ARO = sapply(strsplit(card.record, "|", fixed = TRUE), "[[", 3))
+
+finalARGlist <- merge(
+  finalARGlist,
+  card.aro.info %>%
+    select(`ARO Accession`, `ARO Name`, `AMR Gene Family`, `Drug Class`, `Resistance Mechanism`),
+  by.x = "ARO",
+  by.y = "ARO Accession"
+)
+
+counts <- finalARGlist %>%
+  group_by(Genome, `AMR Gene Family`) %>%
+  summarise(n = n()) %>%
+  ungroup() %>%
+  reshape2::dcast(`AMR Gene Family` ~ Genome, value.var = "n")
+
+counts[is.na(counts)] <- 0
+
+write.csv(counts, "counts.AMRGenefamilies.csv", quote = FALSE, row.names = FALSE)
+
+
+finalARGlist <- finalARGlist %>% arrange(Genome)
+write.csv(finalARGlist, "附表1.ARG列表.csv", quote = FALSE, row.names = FALSE)
+
+
+
+
+#Figure.4 B
+
+deepargV2Recs_pub <- NULL
+
+for(f in deeparg.pub){
+  
+  sp <- sub(".deepargV2.mapping.ARG", "", basename(f))
+  
+  dat2 <- fread(f, data.table = FALSE) %>%
+    mutate(Genome = sp)
+  
+  deepargV2Recs_pub <- bind_rows(deepargV2Recs_pub, dat2)
+}
+
+# ===== OTU16 =====
+deepargV2.otu16 <- fread("WK.OTU.16.deepargV2.mapping.ARG", data.table = FALSE) %>%
+  mutate(Genome = "WK.OTU.16")
+
+
+deepargV2.full <- bind_rows(deepargV2.otu16, deepargV2Recs_pub) %>%
+  filter(!is.na(read_id))
+
+
+deepargV2.full$ARGsubtype <- sapply(
+  strsplit(deepargV2.full$`best-hit`, "|", fixed = TRUE),
+  "[[", 3
+)
+
+
+load("database/deepargMapping_v1v2_regGenes_corrected.RData")
+
+deepargV2.full$regulator <- ifelse(
+  deepargV2.full$ARGsubtype %in% regGenes.v2_df$ARGsubtype,
+  "regulator", "not"
+)
+
+
+load("database/deep_card_unifying.RData")
+
+deepargV2.full <- merge(
+  deepargV2.full,
+  deepv2.highSimilar.cardRec %>% select(deepv2.record, card.record),
+  by.x = "best-hit",
+  by.y = "deepv2.record",
+  all.x = TRUE
+)
+
+
+Habitats <- read_excel("../Sphingopyxis_original.xlsx", col_names = FALSE) %>%
+  select(1,2,6,7,10)
+
+colnames(Habitats) <- c("ID","habitat","species","strain","sequenceType")
+
+deepargV2.full$Genome <- sapply(deepargV2.full$Genome, function(x){
+  parts <- strsplit(x, "_", fixed = TRUE)[[1]]
+  if(length(parts) > 2){
+    paste0(parts[1:2], collapse = "_")
+  } else {
+    parts
+  }
+})
+
+deepargV2.full <- merge(
+  deepargV2.full,
+  Habitats %>% select(ID, habitat),
+  by.x = "Genome",
+  by.y = "ID",
+  all.x = TRUE
+)
+
+
+deepargV2.full %>%
+  group_by(Genome, habitat) %>%
+  summarise(
+    n = n(),
+    n.prob90 = sum(probability > 0.9),
+    n.prob90.eval50 = sum(`alignment-evalue` < 1e-30),
+    n.confirmedARG = sum(regulator != "regulator" & !is.na(card.record)),
+    n.ARG = sum(probability > 0.9 &
+                regulator != "regulator" &
+                !is.na(card.record))
+  )
+
+
+finalARGlist <- deepargV2.full %>%
+  filter(probability > 0.9) %>%
+  filter(regulator != "regulator" & !is.na(card.record))
+
+
+nARG <- finalARGlist %>%
+  group_by(Genome) %>%
+  summarise(n = n())
+
+
+nARG.pub <- nARG$n[nARG$Genome != "WK.OTU.16"]
+nARG.otu6 <- nARG$n[nARG$Genome == "WK.OTU.16"]
+
+shapiro.test(nARG.pub)
+t.test(nARG.pub, mu = nARG.otu6, alternative = "less")
+
+cohen.d(nARG.pub, NA, mu = nARG.otu6)
+
+
+ggplot(nARG %>% filter(Genome != "WK.OTU.6")) +
+  geom_density(aes(x = n), fill = "lightblue") +
+  geom_vline(xintercept = nARG.otu6, color = "red") +
+  theme_bw()
+
+ggsave("图1.Sphingopyxis菌属ARG个数分布图.pdf", width = 5, height = 3)
+
+
+card.aro.info <- fread(
+  "aro_index.tsv",
+  data.table = FALSE
+)
+
+finalARGlist <- finalARGlist %>%
+  mutate(ARO = sapply(strsplit(card.record, "|", fixed = TRUE), "[[", 3))
+
+finalARGlist <- merge(
+  finalARGlist,
+  card.aro.info %>%
+    select(`ARO Accession`, `ARO Name`, `AMR Gene Family`, `Drug Class`, `Resistance Mechanism`),
+  by.x = "ARO",
+  by.y = "ARO Accession"
+)
+
+counts <- finalARGlist %>%
+  group_by(Genome, `AMR Gene Family`) %>%
+  summarise(n = n()) %>%
+  ungroup() %>%
+  reshape2::dcast(`AMR Gene Family` ~ Genome, value.var = "n")
+
+counts[is.na(counts)] <- 0
+
+write.csv(counts, "counts.AMRGenefamilies.csv", quote = FALSE, row.names = FALSE)
+
+
+finalARGlist <- finalARGlist %>% arrange(Genome)
+write.csv(finalARGlist, "附表2.ARG列表.csv", quote = FALSE, row.names = FALSE)
+
