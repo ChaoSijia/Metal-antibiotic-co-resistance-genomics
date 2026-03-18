@@ -1,1 +1,214 @@
-不不不不不不
+#Figure 1-A
+
+library(ggplot2)
+library(dplyr)
+
+df_A <- data.frame(
+  Group = rep(c("AMD sediment", "Tailings"), each = 4),
+  Phylum = rep(c("Proteobacteria", "Firmicutes", "Bacteroidetes", "Actinobacteria"), 2),
+  Value = c(45.5, 31.8, 13.6, 9.1,
+            80.8, 15.4, 3.8, 0)   
+)
+
+df_A <- df_A %>%
+  group_by(Group) %>%
+  arrange(desc(Phylum)) %>%
+  mutate(
+    fraction = Value / sum(Value),
+    ymax = cumsum(fraction),
+    ymin = lag(ymax, default = 0),
+    label_pos = (ymax + ymin) / 2
+  )
+
+  pA <- ggplot(df_A, aes(ymax = ymax, ymin = ymin, xmax = 4, xmin = 2, fill = Phylum)) +
+  geom_rect(color = "white") +
+  geom_text(aes(x = 3, y = label_pos, label = paste0(Value, "%")), size = 4) +
+  facet_wrap(~Group) +
+  coord_polar(theta = "y") +
+  xlim(0, 4) +
+  theme_void() +
+  theme(
+    strip.text = element_text(size = 14, face = "bold"),
+    legend.position = "bottom"
+  )
+
+pA
+
+
+#Figure 1-B
+
+df_B <- data.frame(
+  Group = c(rep("AMD sediment", 8), rep("Tailings", 18)),
+  Genus = c(
+    "Dyella", "Bacillus", "Cellulomonas", "Cloacibacterium",
+    "Rhodanobacter", "Rhodanobacter", "Fictibacillus", 
+    "Geobacillus", "Hydrotalea", "Lactobacillus", "Lysobacter",
+    
+    # Tailings
+    "Allorhizobium", "Bacillus", "Blastomonas", "Brevundimonas",
+    "Carnobacterium", "Sphingopyxis", "Thermomonas", "Uncultured bacterium",  "Hydrotalea", "Lysobacter", "Ralstonia", "Parapusillimonas",
+    "Comamonas", "Lactobacillus", "Diaphorobacter", "Effusibacillus", "Geobacillus", "Porphyrobacter"
+  ),
+  Value = c(
+    5.6, 22.2, 11.1, 5.6, 5.6, 22.2, 11.1, 5.6,
+    rep(4.5, 4.5, 4.5, 4.5, 4.5, 9.1, 4.5, 4.5, 9.1, 4.5, 4.5, 4.5, 4.5, 9.1, 4.5, 4.5, 4.5, 9.1)  
+  )
+)
+
+df_B <- df_B %>%
+  group_by(Group) %>%
+  mutate(
+    fraction = Value / sum(Value),
+    ymax = cumsum(fraction),
+    ymin = lag(ymax, default = 0),
+    label_pos = (ymax + ymin) / 2
+  )
+
+
+  pB <- ggplot(df_B, aes(ymax = ymax, ymin = ymin, xmax = 4, xmin = 2, fill = Genus)) +
+  geom_rect(color = "white") +
+  geom_text(aes(x = 3, y = label_pos, label = paste0(Value, "%")), size = 2.5) +
+  facet_wrap(~Group) +
+  coord_polar(theta = "y") +
+  xlim(0, 4) +
+  theme_void() +
+  theme(
+    strip.text = element_text(size = 14, face = "bold"),
+    legend.position = "right"
+  )
+
+pB
+
+
+
+#Figure 1-C
+library(readxl)
+library(dplyr)
+library(ggplot2)
+
+excel_sheets("E:/MIC/MIC_EUCAST.xlsx")
+MIC.mining <- read_excel("E:/MIC/MIC_EUCAST.xlsx", sheet = "Mining")
+MIC.eucast <- read_excel("E:/MIC/MIC_EUCAST.xlsx", sheet = "EUCAST")
+MIC.eucast <- MIC.eucast %>% filter(MIC != "NA")
+
+MIC.mining$Group <- "Mining"
+MIC.eucast$Group <- "EUCAST"
+
+# 转换数据类型
+MIC.eucast$MIC <- as.numeric(MIC.eucast$MIC)
+
+# 合并数据
+df <- bind_rows(MIC.mining, MIC.eucast)
+
+# 抗生素列表（自动识别）
+antibiotics <- setdiff(colnames(df), c("Isolate","Group"))
+
+# 检查Antibiotic列的唯一值
+antibiotics <- unique(df$Antibiotic)
+cat("\n抗生素列表:\n")
+print(antibiotics)
+cat("\n抗生素数量:", length(antibiotics), "\n")
+
+df$MIC <- as.numeric(df$MIC)
+
+
+dir.create("E:/MIC/MIC_9_plots_pro", showWarnings = FALSE, recursive = TRUE)
+
+
+# 循环绘制每个抗生素的散点图
+for (ab in antibiotics) {
+  cat("\n正在处理抗生素:", ab, "\n")
+  
+  # 筛选特定抗生素的数据
+  sub <- df %>% 
+    filter(Antibiotic == ab, !is.na(MIC))
+  
+  # 检查数据
+  group_counts <- table(sub$Group)
+  cat("分组计数:\n")
+  print(group_counts)
+  
+  # 确保两个组都有数据
+  if (length(unique(sub$Group)) == 2 && min(table(sub$Group)) > 0) {
+    
+    # 计算显著性 p 值
+    wtest <- tryCatch({
+      wilcox.test(MIC ~ Group, data = sub)$p.value
+    }, error = function(e) {
+      cat("Wilcoxon检验出错:", e$message, "\n")
+      return(NA)
+    })
+    
+    # 创建图形
+    p <- ggplot(sub, aes(x = Group, y = MIC, color = Group)) +
+      geom_jitter(width = 0.15, size = 2, alpha = 0.6) +
+      geom_boxplot(alpha = 0.2, outlier.shape = NA, width = 0.5) +
+      scale_y_log10() +
+      labs(title = paste0("MIC Comparison: ", ab),
+           subtitle = ifelse(is.na(wtest), "无法计算p值", 
+                             paste0("Wilcoxon p = ", signif(wtest, 3))),
+           y = "MIC (µg/mL)",
+           x = "") +
+      theme_bw(base_size = 14) +
+      theme(legend.position = "none",
+            plot.title = element_text(hjust = 0.5),
+            plot.subtitle = element_text(hjust = 0.5))
+    
+    # 保存图形
+    filename <- gsub("[^[:alnum:]]", "_", ab)  # 清理文件名
+    ggsave(paste0("E:/MIC/MIC_9_plots/", filename, "_comparison.png"),
+           p, width = 6, height = 5, dpi = 300)
+    
+    cat("已保存图形:", ab, "\n")
+    
+  } else {
+    cat("跳过", ab, ": 数据不足或分组不正确\n")
+  }
+}
+
+cat("\n所有图形已保存到: E:/MIC/MIC_9_plots/\n")
+
+
+
+# ------------------------创建一个包含所有9个图形的大图--------------------------------------
+library(patchwork)
+
+plots_list <- list()
+
+for (i in seq_along(antibiotics)) {
+  ab <- antibiotics[i]
+  sub <- df %>% 
+    filter(Antibiotic == ab, !is.na(MIC))
+  
+  if (length(unique(sub$Group)) == 2 && min(table(sub$Group)) > 0) {
+    wtest <- tryCatch({
+      wilcox.test(MIC ~ Group, data = sub)$p.value
+    }, error = function(e) NA)
+    
+    p <- ggplot(sub, aes(x = Group, y = MIC, color = Group)) +
+      geom_jitter(width = 0.2, size = 6, alpha = 0.8, shape = 21) +
+      geom_boxplot(alpha = 0.8, outlier.shape = NA, width = 0.7, size = 7, lwd = 1.8) + 
+      scale_y_log10() +
+      labs(title = ab,
+           subtitle = ifelse(is.na(wtest), "", 
+                             paste0("p = ", signif(wtest, 3))),
+           y = "MIC (µg/mL)") +
+      theme_bw(base_size = 14) +
+      theme(legend.position = "none",
+            plot.title = element_text(hjust = 0.5, size = 16, face = "bold"), 
+            plot.subtitle = element_text(hjust = 0.5, size = 12),
+            axis.title = element_text(size = 14),  
+            axis.text = element_text(size = 12))    
+    
+    plots_list[[i]] <- p
+  }
+}
+
+# 组合图形（3x3布局）
+if (length(plots_list) > 0) {
+  combined_plot <- wrap_plots(plots_list, ncol = 3)
+  ggsave("E:/MIC/MIC_9_plots_pro/combined_plots_4.pdf", 
+         combined_plot, width = 13, height = 18, dpi = 300)
+  cat("已保存组合图形: combined_9_plots.pdf\n")
+}
+
