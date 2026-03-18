@@ -1,0 +1,271 @@
+#Figure.5 A -C
+library(tidyverse)
+library(readxl)
+
+#C VF-MGE co-occurrence
+
+vf_raw <- read.csv("WK16.VF_filter.csv", header = TRUE, check.names = FALSE) 
+vf_tbl <- vf_raw %>%
+  distinct(Query)
+
+gff <- read_tsv(
+  "WK.OTU.16.gene.gff",
+  comment = "#",
+  col_names = c("seqid","source","type","start","end",
+                "score","strand","phase","attributes")
+)
+
+orf_pos <- gff %>%
+  filter(type == "CDS") %>%
+  mutate(
+    orf_id = str_extract(attributes, "(?<=locus_tag=)[^;]+")
+  ) %>%
+  select(seqid, start, end, orf_id)
+
+
+vf_tbl <- vf_raw %>%
+  distinct(Query) %>%
+  rename(orf_id = Query)
+
+vf_pos <- vf_tbl %>%
+  left_join(orf_pos, by = "orf_id") %>%
+  drop_na(seqid, start, end)
+
+sum(is.na(vf_pos$start))
+n_distinct(vf_pos$orf_id)
+
+
+mge_tbl <- read.csv(
+  "WK.OTU.16_MGE_附表.csv",
+  header = TRUE,
+  stringsAsFactors = FALSE,
+  check.names = FALSE
+)
+
+head(mge_tbl)
+str(mge_tbl)
+
+
+
+MGE.activeRanges <- c(
+  "ICE" = 300000,
+  "partial_ICE" = 300000,
+  "IME" = 50000,
+  "compositeTn" = 10000,
+  "unitTn" = 10000,
+  "IS" = 10000,
+  "plasmid" = 1,
+  "phage" = 1,
+  "prophage" = 1,
+  "GI" = 0
+)
+
+
+mge_tbl <- mge_tbl %>%
+  rename(
+    seqid = Seq,
+    MGE_type = Type,
+    start = Start,
+    end = End
+  )
+
+
+mge_ext <- mge_tbl %>%
+  mutate(
+    active_range = MGE.activeRanges[MGE_type],
+    ext_start = pmax(1, start - active_range),
+    ext_end   = end + active_range
+  )
+
+
+
+
+vf_pos <- vf_pos %>%
+  mutate(seqid = "chromosome")
+
+mge_ext$seqid <- as.character(mge_ext$seqid)
+
+vf_pos2 <- vf_pos %>%
+  rename(
+    vf_start = start,
+    vf_end   = end
+  )
+
+mge_ext2 <- mge_ext %>%
+  rename(
+    mge_start = start,
+    mge_end   = end
+  )
+
+vf_mge_hits <- vf_pos2 %>%
+  inner_join(mge_ext2, by = "seqid", relationship = "many-to-many") %>%
+  filter(
+    vf_start <= ext_end &
+      vf_end   >= ext_start
+  ) %>%
+  distinct(orf_id)
+
+
+total_vf <- n_distinct(vf_pos2$orf_id)
+vf_with_mge <- n_distinct(vf_mge_hits$orf_id)
+
+result <- tibble(
+  total_VF = total_vf,
+  VF_with_MGE = vf_with_mge,
+  proportion_with_MGE = vf_with_mge / total_vf
+)
+
+print(result)
+
+
+
+
+#MGEtype
+vf_mge_all <- vf_pos2 %>%
+  inner_join(mge_ext2, by = "seqid", relationship = "many-to-many") %>%
+  filter(
+    vf_start <= ext_end &
+      vf_end   >= ext_start
+  ) %>%
+  select(orf_id, MGE_type)
+
+vf_by_mge_type <- vf_mge_all %>%
+  distinct(orf_id, MGE_type) %>%   
+  count(MGE_type, name = "VF_count") %>%
+  arrange(desc(VF_count))
+
+print(vf_by_mge_type)
+
+
+
+
+#A ARG-MGE co-occurrence
+
+arg_raw <- read.csv("WK16.ARG_filter.csv", header = TRUE, check.names = FALSE)
+
+arg_tbl <- arg_raw %>%
+  distinct(Query) %>%
+  rename(orf_id = Query)
+
+
+arg_pos <- arg_tbl %>%
+  left_join(orf_pos, by = "orf_id") %>%
+  drop_na(seqid, start, end)
+
+
+arg_pos <- arg_pos %>%
+  mutate(seqid = "chromosome")
+
+
+
+arg_pos2 <- arg_pos %>%
+  rename(
+    arg_start = start,
+    arg_end   = end
+  )
+
+
+arg_mge_hits <- arg_pos2 %>%
+  inner_join(mge_ext2, by = "seqid", relationship = "many-to-many") %>%
+  filter(
+    arg_start <= ext_end &
+    arg_end   >= ext_start
+  ) %>%
+  distinct(orf_id)
+
+
+total_arg <- n_distinct(arg_pos2$orf_id)
+arg_with_mge <- n_distinct(arg_mge_hits$orf_id)
+
+arg_result <- tibble(
+  total_ARG = total_arg,
+  ARG_with_MGE = arg_with_mge,
+  proportion_with_MGE = arg_with_mge / total_arg
+)
+
+print(arg_result)
+
+
+arg_mge_all <- arg_pos2 %>%
+  inner_join(mge_ext2, by = "seqid", relationship = "many-to-many") %>%
+  filter(
+    arg_start <= ext_end &
+    arg_end   >= ext_start
+  ) %>%
+  select(orf_id, MGE_type)
+
+arg_by_mge_type <- arg_mge_all %>%
+  distinct(orf_id, MGE_type) %>%
+  count(MGE_type, name = "ARG_count") %>%
+  arrange(desc(ARG_count))
+
+print(arg_by_mge_type)
+
+
+
+
+#B MRG-MGE co-occurrence
+
+mrg_raw <- read.csv("WK16.MRG_filter.csv", header = TRUE, check.names = FALSE)
+
+mrg_tbl <- mrg_raw %>%
+  distinct(Query) %>%
+  rename(orf_id = Query)
+
+
+mrg_pos <- mrg_tbl %>%
+  left_join(orf_pos, by = "orf_id") %>%
+  drop_na(seqid, start, end)
+
+
+mrg_pos <- mrg_pos %>%
+  mutate(seqid = "chromosome")
+
+
+mrg_pos2 <- mrg_pos %>%
+  rename(
+    mrg_start = start,
+    mrg_end   = end
+  )
+
+
+mrg_mge_hits <- mrg_pos2 %>%
+  inner_join(mge_ext2, by = "seqid", relationship = "many-to-many") %>%
+  filter(
+    mrg_start <= ext_end &
+    mrg_end   >= ext_start
+  ) %>%
+  distinct(orf_id)
+
+
+total_mrg <- n_distinct(mrg_pos2$orf_id)
+mrg_with_mge <- n_distinct(mrg_mge_hits$orf_id)
+
+mrg_result <- tibble(
+  total_MRG = total_mrg,
+  MRG_with_MGE = mrg_with_mge,
+  proportion_with_MGE = mrg_with_mge / total_mrg
+)
+
+print(mrg_result)
+
+mrg_mge_all <- mrg_pos2 %>%
+  inner_join(mge_ext2, by = "seqid", relationship = "many-to-many") %>%
+  filter(
+    mrg_start <= ext_end &
+    mrg_end   >= ext_start
+  ) %>%
+  select(orf_id, MGE_type)
+
+mrg_by_mge_type <- mrg_mge_all %>%
+  distinct(orf_id, MGE_type) %>%
+  count(MGE_type, name = "MRG_count") %>%
+  arrange(desc(MGE_count))
+
+print(mrg_by_mge_type)
+
+
+
+#gene cluster
+
+https://www.chiplot.online/gene_cluster.html
